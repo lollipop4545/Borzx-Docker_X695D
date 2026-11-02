@@ -52,12 +52,14 @@
 #include <linux/proc_fs.h>
 #include <linux/of_fdt.h>	/*of_dt API*/
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/vmalloc.h>
 #include <linux/math64.h>
 #include <linux/alarmtimer.h>
 
 #include <mt-plat/aee.h>
 #include <mt-plat/charger_type.h>
+#include <linux/iio/consumer.h>
 #include <mt-plat/mtk_charger.h>
 #include <mt-plat/mtk_battery.h>
 #include <mt-plat/mtk_boot.h>
