@@ -927,7 +927,8 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 			kfree(name);
 			break;
 		case Opt_tran_gc:
-			f2fs_warn(sbi, "tran_gc requested; proprietary Transsion GC extension unavailable, using standard F2FS GC behavior");
+			if (!is_remount)
+				f2fs_warn(sbi, "tran_gc requested; proprietary Transsion GC extension unavailable, using standard F2FS GC behavior");
 			break;
 		default:
 			f2fs_err(sbi, "Unrecognized mount option \"%s\" or missing value",
