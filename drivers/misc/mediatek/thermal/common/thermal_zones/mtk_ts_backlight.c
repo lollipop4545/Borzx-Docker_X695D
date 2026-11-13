@@ -33,6 +33,10 @@
 #include <linux/uidgid.h>
 #include <tmp_bts.h>
 #include <linux/slab.h>
+#include <linux/err.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
+#include <linux/ratelimit.h>
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
 #include <linux/iio/consumer.h>
 #endif
@@ -109,6 +113,18 @@ pr_debug("[Thermal/TZ/BACKLIGHT]" fmt, ##args)
 
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
 struct iio_channel *thermistor_ch2;
+static struct platform_device *mtkts_backlight_pdev;
+
+static bool mtkts_backlight_has_valid_sensor(void)
+{
+	return READ_ONCE(mtkts_backlight_pdev) != NULL &&
+	       !IS_ERR_OR_NULL(READ_ONCE(thermistor_ch2));
+}
+#else
+static bool mtkts_backlight_has_valid_sensor(void)
+{
+	return true;
+}
 #endif
 
 /* #define INPUT_PARAM_FROM_USER_AP */
@@ -605,28 +621,60 @@ static __s16 mtk_ts_backlight_volt_to_temp(__u32 dwVolt)
 	return BACKLIGHT_TMP;
 }
 
-static int get_hw_backlight_temp(void)
+static int get_hw_backlight_temp(int *temp_c)
 {
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
+	struct platform_device *pdev;
+	struct iio_channel *ch;
 	int val = 0;
-	int ret = 0, output;
+	int ret = 0, mv = 0;
 #else
-	int ret = 0, data[4], i, ret_value = 0, ret_temp = 0, output;
+	int ret = 0, data[4], i, ret_value = 0, ret_temp = 0;
 	int times = 1, Channel = g_RAP_ADC_channel; /* 6752=0(AUX_IN1_NTC) */
 	static int valid_temp;
 #endif
 
+	if (!temp_c)
+		return -EINVAL;
+
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
-	ret = iio_read_channel_processed(thermistor_ch2, &val);
+	pdev = READ_ONCE(mtkts_backlight_pdev);
+	ch = READ_ONCE(thermistor_ch2);
+	if (!pdev) {
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] %s: missing platform device\n",
+			__func__);
+		return -ENODEV;
+	}
+	if (!ch) {
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] %s: thermistor_ch2 is NULL\n",
+			__func__);
+		return -ENODEV;
+	}
+	if (IS_ERR(ch)) {
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] %s: invalid thermistor_ch2 (%ld)\n",
+			__func__, PTR_ERR(ch));
+		return (int)PTR_ERR(ch);
+	}
+
+	ret = iio_read_channel_processed(ch, &val);
 	mtkts_backlight_dprintk("get_hw_btsmdpa_temp val=%d\n", val);
 
 	if (ret < 0) {
-		mtkts_backlight_printk("IIO channel read failed %d\n", ret);
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] IIO channel read failed %d\n",
+			ret);
 		return ret;
 	}
 
 	/*val * 1500 / 4096*/
-	ret = (val * 1500) >> 12;
+	mv = (val * 1500) >> 12;
+	mtkts_backlight_dprintk("APtery output mV = %d\n", mv);
+	*temp_c = mtk_ts_backlight_volt_to_temp(mv);
+	mtkts_backlight_dprintk("BACKLIGHT output temperature = %d\n", *temp_c);
+	return 0;
 #else
 
 #if defined(APPLY_AUXADC_CALI_DATA)
@@ -634,9 +682,9 @@ static int get_hw_backlight_temp(void)
 #endif
 
 	if (IMM_IsAdcInitReady() == 0) {
-		mtkts_backlight_printk(
-			"[thermal_auxadc_get_data]: AUXADC is not ready\n");
-		return 0;
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] [thermal_auxadc_get_data]: AUXADC is not ready\n");
+		return -ENODEV;
 	}
 
 	i = times;
@@ -692,30 +740,38 @@ static int get_hw_backlight_temp(void)
 #else
 	ret = ret * 1500 / 4096;
 #endif
-#endif /*CONFIG_MEDIATEK_MT6577_AUXADC*/
-
 	/* ret = ret*1800/4096;//82's ADC power */
 	mtkts_backlight_dprintk("APtery output mV = %d\n", ret);
-	output = mtk_ts_backlight_volt_to_temp(ret);
-	mtkts_backlight_dprintk("BACKLIGHT output temperature = %d\n", output);
-	return output;
+	*temp_c = mtk_ts_backlight_volt_to_temp(ret);
+	mtkts_backlight_dprintk("BACKLIGHT output temperature = %d\n", *temp_c);
+	return 0;
+#endif /*CONFIG_MEDIATEK_MT6577_AUXADC*/
 }
 
 static DEFINE_MUTEX(BACKLIGHT_lock);
 /*int ts_backlight_at_boot_time = 0;*/
-int mtkts_backlight_get_hw_temp(void)
+static int mtkts_backlight_read_temp_mc(int *temp_mc)
 {
 	int t_ret = 0;
+	int err = 0;
 
 #if MTKTS_BACKLIGHT_SW_FILTER
 	static int pre_temp1;
 #define DELTA_TEMP 2000
 #endif
+
+	if (!temp_mc)
+		return -EINVAL;
+
 	mutex_lock(&BACKLIGHT_lock);
 
 	/* get HW AP temp (TSAP) */
 	/* cat /sys/class/power_supply/AP/AP_temp */
-	t_ret = get_hw_backlight_temp();
+	err = get_hw_backlight_temp(&t_ret);
+	if (err) {
+		mutex_unlock(&BACKLIGHT_lock);
+		return err;
+	}
 	t_ret = t_ret * 1000;
 
 #if MTKTS_BACKLIGHT_SW_FILTER
@@ -745,12 +801,35 @@ int mtkts_backlight_get_hw_temp(void)
 
 	mtkts_backlight_dprintk("[%s] T_btsmdpa, %d\n", __func__,
 									t_ret);
-	return t_ret;
+	*temp_mc = t_ret;
+	return 0;
+}
+
+int mtkts_backlight_get_hw_temp(void)
+{
+	int temp_mc = 0;
+	int err;
+
+	err = mtkts_backlight_read_temp_mc(&temp_mc);
+	if (err)
+		return err;
+
+	return temp_mc;
 }
 
 static int mtkts_backlight_get_temp(struct thermal_zone_device *thermal, int *t)
 {
-	*t = mtkts_backlight_get_hw_temp();
+	int temp_mc = 0;
+	int err;
+
+	if (!thermal || !t)
+		return -EINVAL;
+
+	err = mtkts_backlight_read_temp_mc(&temp_mc);
+	if (err)
+		return err;
+
+	*t = temp_mc;
 
 	if ((int)*t > 52000)
 		mtkts_backlight_dprintk("T=%d\n", (int)*t);
@@ -967,6 +1046,7 @@ struct file *file, const char __user *buffer, size_t count, loff_t *data)
 {
 	int len = 0;
 	int i;
+	int err = 0;
 	struct backlight_data {
 		int trip[10];
 		int t_type[10];
@@ -1107,10 +1187,12 @@ struct file *file, const char __user *buffer, size_t count, loff_t *data)
 
 		mtkts_backlight_dprintk(
 			"[%s] mtkts_backlight_register_thermal\n", __func__);
-		mtkts_backlight_register_thermal();
+		err = mtkts_backlight_register_thermal();
 		up(&sem_mutex);
 
 		kfree(ptr_backlight_data);
+		if (err)
+			return err;
 
 		/* AP_write_flag=1; */
 		return count;
@@ -1351,10 +1433,26 @@ static int mtkts_backlight_register_thermal(void)
 {
 	mtkts_backlight_dprintk("[%s]\n", __func__);
 
+	if (!mtkts_backlight_has_valid_sensor()) {
+		pr_warn_ratelimited(
+			"[Power/BACKLIGHT_Thermal] [%s] no usable sensor, skipping thermal zone registration\n",
+			__func__);
+		return -ENODEV;
+	}
+
 	/* trips : trip 0~1 */
 	thz_dev = mtk_thermal_zone_device_register("mtktsbacklight", num_trip,
 					NULL, &mtkts_backlight_dev_ops, 0, 0, 0,
 					interval * 1000);
+	if (IS_ERR_OR_NULL(thz_dev)) {
+		int err = thz_dev ? PTR_ERR(thz_dev) : -EINVAL;
+
+		thz_dev = NULL;
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] [%s] thermal zone registration failed: %d\n",
+			__func__, err);
+		return err;
+	}
 
 	return 0;
 }
@@ -1407,35 +1505,6 @@ static const struct file_operations mtkts_backlight_param_fops = {
 
 
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
-static int mtkts_backlight_probe(struct platform_device *pdev)
-{
-	int err = 0;
-	int ret = 0;
-
-	mtkts_backlight_dprintk("[%s]\n", __func__);
-
-	if (!pdev->dev.of_node) {
-		mtkts_backlight_printk("[%s]Only DT based supported\n",
-		__func__);
-		return -ENODEV;
-	}
-
-	thermistor_ch2 = devm_kzalloc(&pdev->dev, sizeof(*thermistor_ch2),
-		GFP_KERNEL);
-	if (!thermistor_ch2)
-		return -ENOMEM;
-
-	thermistor_ch2 = iio_channel_get(&pdev->dev, "thermistor-ch2");
-	ret = IS_ERR(thermistor_ch2);
-	if (ret) {
-		mtkts_backlight_printk("[%s] fail to get auxadc iio ch0: %d\n",
-			__func__, ret);
-		return ret;
-	}
-
-	return err;
-}
-
 #ifdef CONFIG_OF
 const struct of_device_id mt_thermistor_of_match3[2] = {
 	{.compatible = "mediatek,mtboard-thermistor3",},
@@ -1443,9 +1512,64 @@ const struct of_device_id mt_thermistor_of_match3[2] = {
 };
 #endif
 
+static int mtkts_backlight_probe(struct platform_device *pdev)
+{
+	struct iio_channel *ch;
+	int err = 0;
+#ifdef CONFIG_OF
+	const struct of_device_id *match;
+#endif
+
+	mtkts_backlight_dprintk("[%s]\n", __func__);
+
+	if (!pdev)
+		return -EINVAL;
+
+	if (!pdev->dev.of_node) {
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] [%s] Only DT based supported\n",
+			__func__);
+		return -ENODEV;
+	}
+
+#ifdef CONFIG_OF
+	match = of_match_device(mt_thermistor_of_match3, &pdev->dev);
+	if (!match) {
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] [%s] DT compatible mismatch\n",
+			__func__);
+		return -ENODEV;
+	}
+#endif
+
+	ch = devm_iio_channel_get(&pdev->dev, "thermistor-ch2");
+	if (IS_ERR_OR_NULL(ch)) {
+		err = ch ? PTR_ERR(ch) : -ENODEV;
+		WRITE_ONCE(thermistor_ch2, NULL);
+		WRITE_ONCE(mtkts_backlight_pdev, NULL);
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] [%s] fail to get auxadc iio thermistor-ch2: %d\n",
+			__func__, err);
+		return err;
+	}
+
+	WRITE_ONCE(thermistor_ch2, ch);
+	WRITE_ONCE(mtkts_backlight_pdev, pdev);
+	return 0;
+}
+
+static int mtkts_backlight_remove(struct platform_device *pdev)
+{
+	if (READ_ONCE(mtkts_backlight_pdev) == pdev) {
+		WRITE_ONCE(mtkts_backlight_pdev, NULL);
+		WRITE_ONCE(thermistor_ch2, NULL);
+	}
+	return 0;
+}
+
 #define THERMAL_THERMISTOR_NAME    "mtboard-thermistor3"
 static struct platform_driver mtk_thermal_backlight_driver = {
-	.remove = NULL,
+	.remove = mtkts_backlight_remove,
 	.shutdown = NULL,
 	.probe = mtkts_backlight_probe,
 	.suspend = NULL,
@@ -1463,24 +1587,41 @@ static int __init mtkts_backlight_init(void)
 {
 	struct proc_dir_entry *entry = NULL;
 	struct proc_dir_entry *mtkts_backlight_dir = NULL;
-#if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
 	int err = 0;
-#endif
 
 	mtkts_backlight_dprintk("[%s]\n", __func__);
 
 #if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
 	err = platform_driver_register(&mtk_thermal_backlight_driver);
 	if (err) {
-		mtkts_backlight_printk("thermal driver callback register failed.\n");
+		pr_err_ratelimited(
+			"[Power/BACKLIGHT_Thermal] thermal driver register failed: %d\n",
+			err);
 		return err;
+	}
+
+	if (!mtkts_backlight_has_valid_sensor()) {
+		pr_notice(
+			"[Power/BACKLIGHT_Thermal] [%s] no usable backlight thermistor DT device; skipping registration\n",
+			__func__);
+		platform_driver_unregister(&mtk_thermal_backlight_driver);
+		return -ENODEV;
 	}
 #endif
 	/* setup default table */
 	mtkts_backlight_prepare_table(g_RAP_ntc_table);
 
+	err = mtkts_backlight_register_thermal();
+	if (err) {
+#if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
+		platform_driver_unregister(&mtk_thermal_backlight_driver);
+		WRITE_ONCE(mtkts_backlight_pdev, NULL);
+		WRITE_ONCE(thermistor_ch2, NULL);
+#endif
+		return err;
+	}
+
 	mtkts_backlight_dir = mtk_thermal_get_proc_drv_therm_dir_entry();
-	mtkts_backlight_register_thermal();
 	if (!mtkts_backlight_dir) {
 		mtkts_backlight_dprintk(
 			"[%s]: mkdir /proc/driver/thermal failed\n", __func__);
@@ -1506,6 +1647,11 @@ static void __exit mtkts_backlight_exit(void)
 {
 	mtkts_backlight_dprintk("[%s]\n", __func__);
 	mtkts_backlight_unregister_thermal();
+#if defined(CONFIG_MEDIATEK_MT6577_AUXADC)
+	platform_driver_unregister(&mtk_thermal_backlight_driver);
+	WRITE_ONCE(mtkts_backlight_pdev, NULL);
+	WRITE_ONCE(thermistor_ch2, NULL);
+#endif
 #if 0
 	mtkTTimer_unregister("mtktsbacklight");
 #endif
