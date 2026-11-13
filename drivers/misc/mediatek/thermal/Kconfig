@@ -5,3 +5,16 @@ config MTK_THERMAL_PA_VIA_ATCMD
 	  to query modem RF temperature
 	  via AT command.
 	  (RIL sockets)
+
+config MTK_THERMAL_BACKLIGHT
+	bool "MediaTek backlight thermistor thermal zone (mtktsbacklight)"
+	depends on THERMAL
+	default THERMAL
+	help
+	  Enable the MediaTek backlight thermistor (mediatek,mtboard-thermistor3)
+	  thermal zone driver (mtk_ts_backlight.c).
+
+	  Say Y only on targets whose Device Tree defines a matching
+	  mediatek,mtboard-thermistor3 node and IIO channel thermistor-ch2
+	  (such as Redmi Note 8 Pro / begonia). Leave N on targets without that
+	  sensor node (such as Infinix Note 10 Pro / X695D).
