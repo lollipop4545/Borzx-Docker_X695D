@@ -857,7 +857,7 @@ static void _vdo_mode_enter_idle(void)
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 	unsigned int cur_cfg_id = 0;
 	unsigned int _vsyncFPS = 6000;/*real fps * 100*/
-	unsigned int _vfp_for_lp = 0;
+	unsigned int __maybe_unused _vfp_for_lp = 0;
 #endif
 
 	DISPDBG("[LP]%s\n", __func__);
