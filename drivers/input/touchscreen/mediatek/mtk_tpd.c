@@ -150,7 +150,7 @@ void tpd_gpio_as_int(int pin)
 {
 	mutex_lock(&tpd_set_gpio_mutex);
 	TPD_DEBUG("[tpd] %s\n", __func__);
-	if (pin == 1)
+	if (pin == 1 && !IS_ERR_OR_NULL(pinctrl1) && !IS_ERR_OR_NULL(eint_as_int))
 		pinctrl_select_state(pinctrl1, eint_as_int);
 	mutex_unlock(&tpd_set_gpio_mutex);
 }
@@ -160,10 +160,13 @@ void tpd_gpio_output(int pin, int level)
 	mutex_lock(&tpd_set_gpio_mutex);
 	TPD_DEBUG("%s pin = %d, level = %d\n", __func__, pin, level);
 	if (pin == 1) {
-		if (level)
-			pinctrl_select_state(pinctrl1, eint_output1);
-		else
-			pinctrl_select_state(pinctrl1, eint_output0);
+		if (level) {
+			if (!IS_ERR_OR_NULL(pinctrl1) && !IS_ERR_OR_NULL(eint_output1))
+				pinctrl_select_state(pinctrl1, eint_output1);
+		} else {
+			if (!IS_ERR_OR_NULL(pinctrl1) && !IS_ERR_OR_NULL(eint_output0))
+				pinctrl_select_state(pinctrl1, eint_output0);
+		}
 	} else {
 		if (tpd_dts_data.tpd_use_ext_gpio) {
 #ifdef CONFIG_MTK_MT6306_GPIO_SUPPORT
@@ -173,10 +176,13 @@ void tpd_gpio_output(int pin, int level)
 				tpd_dts_data.rst_ext_gpio_num, level);
 #endif
 		} else {
-			if (level)
-				pinctrl_select_state(pinctrl1, rst_output1);
-			else
-				pinctrl_select_state(pinctrl1, rst_output0);
+			if (level) {
+				if (!IS_ERR_OR_NULL(pinctrl1) && !IS_ERR_OR_NULL(rst_output1))
+					pinctrl_select_state(pinctrl1, rst_output1);
+			} else {
+				if (!IS_ERR_OR_NULL(pinctrl1) && !IS_ERR_OR_NULL(rst_output0))
+					pinctrl_select_state(pinctrl1, rst_output0);
+			}
 		}
 	}
 	mutex_unlock(&tpd_set_gpio_mutex);

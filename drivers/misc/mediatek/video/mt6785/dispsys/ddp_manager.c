@@ -1220,12 +1220,16 @@ int dpmgr_path_config(disp_path_handle dp_handle,
 	return 0;
 }
 
+static struct disp_ddp_path_config dummy_ddp_last_config;
+
 struct disp_ddp_path_config
 *dpmgr_path_get_last_config_notclear(disp_path_handle dp_handle)
 {
 	struct ddp_path_handle *phandle = (struct ddp_path_handle *)dp_handle;
 
 	ASSERT(dp_handle);
+	if (!phandle)
+		return &dummy_ddp_last_config;
 	return &phandle->last_config;
 }
 
@@ -1235,6 +1239,8 @@ struct disp_ddp_path_config
 	struct ddp_path_handle *phandle = (struct ddp_path_handle *)dp_handle;
 
 	ASSERT(dp_handle);
+	if (!phandle)
+		return &dummy_ddp_last_config;
 	phandle->last_config.ovl_dirty = 0;
 	phandle->last_config.rdma_dirty = 0;
 	phandle->last_config.wdma_dirty = 0;
@@ -1583,6 +1589,8 @@ int dpmgr_path_user_cmd(disp_path_handle dp_handle, unsigned int msg,
 	struct DDP_MODULE_DRIVER *m_drv = NULL;
 
 	ASSERT(dp_handle);
+	if (!dp_handle)
+		return 0;
 	phandle = (struct ddp_path_handle *)dp_handle;
 	/* DISP_LOG_W("%s msg 0x%08x\n", __func__, msg); */
 
@@ -1748,6 +1756,8 @@ int dpmgr_enable_event(disp_path_handle dp_handle, enum DISP_PATH_EVENT event)
 	struct DPMGR_WQ_HANDLE *wq_handle;
 
 	ASSERT(dp_handle);
+	if (!dp_handle)
+		return 0;
 	phandle = (struct ddp_path_handle *)dp_handle;
 	wq_handle = &phandle->wq_list[event];
 

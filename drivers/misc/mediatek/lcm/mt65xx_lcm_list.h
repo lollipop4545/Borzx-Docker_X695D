@@ -351,6 +351,7 @@ extern struct LCM_DRIVER ft8719_fhdp_dsi_vdo_xinli_lcm_drv;
 extern struct LCM_DRIVER tianma_fhd_nt36672a_dsi_vdo_lcm_drv;
 extern struct LCM_DRIVER csot_fhd_nt36672a_dsi_vdo_lcm_drv;
 extern struct LCM_DRIVER ebbg_fhd_ft8719_dsi_vdo_lcm_drv;
+extern struct LCM_DRIVER nt36672c_fhdp_dsi_cphy_vdo_txd_boe_x695_lcm_drv;
 #ifdef BUILD_LK
 extern void mdelay(unsigned long msec);
 #endif

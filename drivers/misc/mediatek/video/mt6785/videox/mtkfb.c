@@ -777,6 +777,8 @@ static int mtkfb_check_var(struct fb_var_screeninfo *var, struct fb_info *fbi)
 		fbdev->fb_size_in_byte);
 	line_size = var->xres_virtual * bpp / 8;
 
+	if (!var->yres_virtual || !var->xres)
+		return -EINVAL;
 	if (line_size * var->yres_virtual > max_frame_size) {
 		/* Try to keep yres_virtual first */
 		line_size = max_frame_size / var->yres_virtual;
@@ -785,6 +787,8 @@ static int mtkfb_check_var(struct fb_var_screeninfo *var, struct fb_info *fbi)
 			/* Still doesn't fit. Shrink yres_virtual too */
 			var->xres_virtual = var->xres;
 			line_size = var->xres * bpp / 8;
+			if (!line_size)
+				return -EINVAL;
 			var->yres_virtual = max_frame_size / line_size;
 		}
 	}

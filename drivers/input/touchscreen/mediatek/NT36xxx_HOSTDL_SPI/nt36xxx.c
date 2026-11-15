@@ -168,6 +168,11 @@ static void nvt_irq_enable(bool enable)
 {
 	struct irq_desc *desc;
 
+	if (ts->client->irq <= 0) {
+		NVT_ERR("invalid irq %d\n", ts->client->irq);
+		return;
+	}
+
 	if (enable) {
 		if (!ts->irq_enabled) {
 			enable_irq(ts->client->irq);
@@ -1804,7 +1809,8 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	nvt_eng_reset();
 
 #if NVT_TOUCH_SUPPORT_HW_RST
-	gpio_set_value(ts->reset_gpio, 1);
+	if (gpio_is_valid(ts->reset_gpio))
+		gpio_set_value(ts->reset_gpio, 1);
 #endif
 
 	// need 10ms delay after POR(power on reset)
@@ -1889,8 +1895,20 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	}
 
 	//---set int-pin & request irq---
-	client->irq = gpio_to_irq(ts->irq_gpio);
-	if (client->irq) {
+	if (gpio_is_valid(ts->irq_gpio)) {
+		client->irq = gpio_to_irq(ts->irq_gpio);
+	} else {
+		struct device_node *touch_node =
+			of_find_matching_node(NULL, touch_of_match);
+		if (touch_node) {
+			tpd_gpio_as_int(1);
+			client->irq = irq_of_parse_and_map(touch_node, 0);
+			of_node_put(touch_node);
+		} else {
+			client->irq = 0;
+		}
+	}
+	if (client->irq > 0) {
 		NVT_LOG("int_trigger_type=%d\n", ts->int_trigger_type);
 		ts->irq_enabled = true;
 		ret = request_threaded_irq(client->irq, NULL, nvt_ts_work_func,
@@ -2050,7 +2068,8 @@ err_create_nvt_fwu_wq_failed:
 #if WAKEUP_GESTURE
 	device_init_wakeup(&ts->input_dev->dev, 0);
 #endif
-	free_irq(client->irq, ts);
+	if (client->irq > 0)
+		free_irq(client->irq, ts);
 err_int_request_failed:
 	input_unregister_device(ts->input_dev);
 	ts->input_dev = NULL;
@@ -2135,7 +2154,8 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 #endif
 
 	nvt_irq_enable(false);
-	free_irq(client->irq, ts);
+	if (client->irq > 0)
+		free_irq(client->irq, ts);
 
 	mutex_destroy(&ts->xbuf_lock);
 	mutex_destroy(&ts->lock);
@@ -2249,7 +2269,8 @@ static int32_t nvt_ts_suspend(struct device *dev)
 		buf[1] = 0x13;
 		CTP_SPI_WRITE(ts->client, buf, 2);
 
-		enable_irq_wake(ts->client->irq);
+		if (ts->client->irq > 0)
+			enable_irq_wake(ts->client->irq);
 
 		NVT_LOG("Enabled touch wakeup gesture\n");
 	} else {
@@ -2308,7 +2329,8 @@ static int32_t nvt_ts_resume(struct device *dev)
 
 	// please make sure display reset(RESX) sequence and mipi dsi cmds sent before this
 #if NVT_TOUCH_SUPPORT_HW_RST
-	gpio_set_value(ts->reset_gpio, 1);
+	if (gpio_is_valid(ts->reset_gpio))
+		gpio_set_value(ts->reset_gpio, 1);
 #endif
 	if (nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME)) {
 		NVT_ERR("download firmware failed, ignore check fw state\n");

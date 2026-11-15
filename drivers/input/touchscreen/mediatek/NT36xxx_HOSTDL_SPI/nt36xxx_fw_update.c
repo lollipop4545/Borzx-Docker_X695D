@@ -881,13 +881,17 @@ static int32_t nvt_download_firmware(void)
 		 * Keep TP_RESX low when send eng reset cmd
 		 */
 #if NVT_TOUCH_SUPPORT_HW_RST
-		gpio_set_value(ts->reset_gpio, 0);
-		mdelay(1);	//wait 1ms
+		if (gpio_is_valid(ts->reset_gpio)) {
+			gpio_set_value(ts->reset_gpio, 0);
+			mdelay(1);	//wait 1ms
+		}
 #endif
 		nvt_eng_reset();
 #if NVT_TOUCH_SUPPORT_HW_RST
-		gpio_set_value(ts->reset_gpio, 1);
-		mdelay(10);	//wait tRT2BRST after TP_RST
+		if (gpio_is_valid(ts->reset_gpio)) {
+			gpio_set_value(ts->reset_gpio, 1);
+			mdelay(10);	//wait tRT2BRST after TP_RST
+		}
 #endif
 		nvt_bootloader_reset();
 

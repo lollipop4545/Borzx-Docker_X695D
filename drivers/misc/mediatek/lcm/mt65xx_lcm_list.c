@@ -1313,6 +1313,9 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 #if defined(EBBG_FHD_FT8719_DSI_VDO)
 	&ebbg_fhd_ft8719_dsi_vdo_lcm_drv,
 #endif
+#if defined(NT36672C_FHDP_DSI_CPHY_VDO_TXD_BOE_X695)
+	&nt36672c_fhdp_dsi_cphy_vdo_txd_boe_x695_lcm_drv,
+#endif
 };
 
 unsigned char lcm_name_list[][128] = {
@@ -1404,8 +1407,7 @@ unsigned char lcm_name_list[][128] = {
 
 unsigned int lcm_count =
 	sizeof(lcm_driver_list) / sizeof(struct LCM_DRIVER *);
-/* Allow headless / diagnostic boot without compiled-in LCM drivers */
-/* LCM_COMPILE_ASSERT(sizeof(lcm_driver_list) / sizeof(struct LCM_DRIVER *) != 0); */
+LCM_COMPILE_ASSERT(sizeof(lcm_driver_list) / sizeof(struct LCM_DRIVER *) != 0);
 #if defined(NT35520_HD720_DSI_CMD_TM) | \
 	defined(NT35520_HD720_DSI_CMD_BOE) | \
 	defined(NT35521_HD720_DSI_VDO_BOE) | \

@@ -556,6 +556,9 @@ int iio_read_channel_raw(struct iio_channel *chan, int *val)
 {
 	int ret;
 
+	if (IS_ERR_OR_NULL(chan) || !chan->indio_dev)
+		return -EINVAL;
+
 	mutex_lock(&chan->indio_dev->info_exist_lock);
 	if (chan->indio_dev->info == NULL) {
 		ret = -ENODEV;
@@ -692,6 +695,9 @@ EXPORT_SYMBOL_GPL(iio_read_channel_offset);
 int iio_read_channel_processed(struct iio_channel *chan, int *val)
 {
 	int ret;
+
+	if (IS_ERR_OR_NULL(chan) || !chan->indio_dev)
+		return -EINVAL;
 
 	mutex_lock(&chan->indio_dev->info_exist_lock);
 	if (chan->indio_dev->info == NULL) {

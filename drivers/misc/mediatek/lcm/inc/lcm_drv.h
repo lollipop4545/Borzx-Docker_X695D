@@ -1107,20 +1107,20 @@ extern int lm36273_reg_read_bytes(char addr, char *buf);
 extern int lm36273_bl_bias_conf(void);
 extern int lm36273_bias_enable(int enable, int delayMs);
 #else
-int lm36273_reg_write_bytes(unsigned char addr, unsigned char value)
+static inline int lm36273_reg_write_bytes(unsigned char addr, unsigned char value)
 {
 	return 0;
 }
-int lm36273_reg_read_bytes(char addr, char *buf)
+static inline int lm36273_reg_read_bytes(char addr, char *buf)
 {
 	return 0;
 }
 
-int lm36273_bl_bias_conf(void)
+static inline int lm36273_bl_bias_conf(void)
 {
 	return 0;
 }
-int lm36273_bias_enable(int enable, int delayMs)
+static inline int lm36273_bias_enable(int enable, int delayMs)
 {
 	return 0;
 }
