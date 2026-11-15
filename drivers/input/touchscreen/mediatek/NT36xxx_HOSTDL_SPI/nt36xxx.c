@@ -149,7 +149,6 @@ const struct mt_chip_conf spi_ctrdata = {
 const struct mtk_chip_config spi_ctrdata = {
     .rx_mlsb = 1,
     .tx_mlsb = 1,
-    .cs_pol = 0,
 	// Unit is 1/109.2 us.
 	.cs_setuptime = 25, //230ns
 };
