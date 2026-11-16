@@ -912,18 +912,30 @@ static int32_t nvt_download_firmware_hw_crc(void)
 			NVT_ERR("immediate post-boot_ready BLD CRC:\n");
 			nvt_read_bld_hw_crc();
 			for (k = 0; k < 18; k++) {
-				nvt_set_page(ts->mmap->EVENT_BUF_ADDR);
+				int32_t ret_pg, ret_rd;
+				ret_pg = nvt_set_page(ts->mmap->EVENT_BUF_ADDR);
 				rdbg[0] = EVENT_MAP_RESET_COMPLETE & 0x7F;
 				rdbg[1] = 0xAA;
-				CTP_SPI_READ(ts->client, rdbg, 2);
-				NVT_ERR("t+%dms rst_state=0x%02X\n", 15 + k * 10, rdbg[1]);
+				ret_rd = CTP_SPI_READ(ts->client, rdbg, 2);
+				NVT_ERR("t+%dms rst_state=0x%02X (pg=%d rd=%d)\n",
+					15 + k * 10, rdbg[1], ret_pg, ret_rd);
 				if (rdbg[1] != 0x00) {
 					uint8_t cdbg[8] = {0};
+					uint32_t orig_hz = ts->client->max_speed_hz;
 					nvt_set_page(0x1F600);
 					cdbg[0] = 0x00;
 					CTP_SPI_READ(ts->client, cdbg, 7);
-					NVT_ERR("t+%dms chip_id=%02X %02X %02X %02X %02X %02X\n",
+					NVT_ERR("t+%dms chip_id@8M=%02X %02X %02X %02X %02X %02X\n",
 						15 + k * 10, cdbg[1], cdbg[2], cdbg[3], cdbg[4], cdbg[5], cdbg[6]);
+					ts->client->max_speed_hz = 1000000;
+					spi_setup(ts->client);
+					nvt_set_page(0x1F600);
+					memset(cdbg, 0, sizeof(cdbg));
+					CTP_SPI_READ(ts->client, cdbg, 7);
+					NVT_ERR("t+%dms chip_id@1M=%02X %02X %02X %02X %02X %02X\n",
+						15 + k * 10, cdbg[1], cdbg[2], cdbg[3], cdbg[4], cdbg[5], cdbg[6]);
+					ts->client->max_speed_hz = orig_hz;
+					spi_setup(ts->client);
 					break;
 				}
 				mdelay(10);

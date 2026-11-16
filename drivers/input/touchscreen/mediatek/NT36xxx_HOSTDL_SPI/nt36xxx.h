@@ -138,6 +138,7 @@ struct nvt_ts_data {
 	bool irq_enabled;
 	struct workqueue_struct *event_wq;
 	struct work_struct resume_work;
+	atomic_t desired_awake;
 #ifdef CONFIG_MTK_SPI
 	struct mt_chip_conf spi_ctrl;
 #endif

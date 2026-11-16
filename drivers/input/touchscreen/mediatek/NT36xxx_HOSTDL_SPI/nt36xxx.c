@@ -1325,9 +1325,12 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
        } else {
            wdt_recovery_fail_cnt++;
            if (wdt_recovery_fail_cnt >= 5) {
-               NVT_ERR("wdt recovery failed %u times, quiescing touch IRQ\n",
+               NVT_ERR("wdt recovery failed %u times, quiescing touch IRQ (nosync)\n",
                        wdt_recovery_fail_cnt);
-               nvt_irq_enable(false);
+               if (ts->irq_enabled) {
+                   ts->irq_enabled = false;
+                   disable_irq_nosync(ts->client->irq);
+               }
            }
        }
        goto XFER_ERROR;
@@ -2050,6 +2053,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		goto err_alloc_event_wq_failed;
 	}
 
+	atomic_set(&ts->desired_awake, 1);
 	INIT_WORK(&ts->resume_work, nvt_resume_work);
 
 	bTouchIsAwake = 1;
@@ -2285,10 +2289,7 @@ static int32_t nvt_ts_suspend(struct device *dev)
 		return 0;
 	}
 
-	if (!mutex_trylock(&ts->lock)) {
-		NVT_ERR("nvt_ts_suspend: ts->lock busy, skipping to avoid FBIOBLANK hang\n");
-		return 0;
-	}
+	mutex_lock(&ts->lock);
 
 #if !WAKEUP_GESTURE
 	nvt_irq_enable(false);
@@ -2405,7 +2406,13 @@ static void nvt_resume_work(struct work_struct *work)
 {
 	struct nvt_ts_data *ts =
 			container_of(work, struct nvt_ts_data, resume_work);
-	nvt_ts_resume(&ts->client->dev);
+	int want = atomic_read(&ts->desired_awake);
+
+	if (!want && bTouchIsAwake) {
+		nvt_ts_suspend(&ts->client->dev);
+	} else if (want && !bTouchIsAwake) {
+		nvt_ts_resume(&ts->client->dev);
+	}
 }
 
 #if defined(CONFIG_FB)
@@ -2448,19 +2455,16 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 	if (evdata && evdata->data && event == FB_EARLY_EVENT_BLANK) {
 		blank = evdata->data;
 		if (*blank == FB_BLANK_POWERDOWN) {
-			NVT_ERR("fb_notif powerdown+\n");
-			flush_workqueue(ts->event_wq);
-			NVT_ERR("fb_notif flushed, calling suspend\n");
-			nvt_ts_suspend(&ts->client->dev);
-			NVT_ERR("fb_notif powerdown-\n");
+			NVT_LOG("fb_notif powerdown (async)\n");
+			atomic_set(&ts->desired_awake, 0);
+			queue_work(ts->event_wq, &ts->resume_work);
 		}
 	} else if (evdata && evdata->data && event == FB_EVENT_BLANK) {
 		blank = evdata->data;
 		if (*blank == FB_BLANK_UNBLANK) {
-			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-			flush_workqueue(ts->event_wq);
+			NVT_LOG("fb_notif unblank (async)\n");
+			atomic_set(&ts->desired_awake, 1);
 			queue_work(ts->event_wq, &ts->resume_work);
-			//nvt_ts_resume(&ts->client->dev);
 		}
 	}
 
