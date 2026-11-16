@@ -1810,6 +1810,8 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 #if NVT_TOUCH_SUPPORT_HW_RST
 	if (gpio_is_valid(ts->reset_gpio))
 		gpio_set_value(ts->reset_gpio, 1);
+	else
+		tpd_gpio_output(0, 1);
 #endif
 
 	// need 10ms delay after POR(power on reset)
@@ -2333,6 +2335,8 @@ static int32_t nvt_ts_resume(struct device *dev)
 #if NVT_TOUCH_SUPPORT_HW_RST
 	if (gpio_is_valid(ts->reset_gpio))
 		gpio_set_value(ts->reset_gpio, 1);
+	else
+		tpd_gpio_output(0, 1);
 #endif
 	if (nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME)) {
 		NVT_ERR("download firmware failed, ignore check fw state\n");
@@ -2532,8 +2536,7 @@ static void __exit nvt_driver_exit(void)
 	spi_unregister_driver(&nvt_spi_driver);
 }
 
-//late_initcall(nvt_driver_init);
-module_init(nvt_driver_init);
+late_initcall(nvt_driver_init);
 module_exit(nvt_driver_exit);
 
 MODULE_DESCRIPTION("Novatek Touchscreen Driver");

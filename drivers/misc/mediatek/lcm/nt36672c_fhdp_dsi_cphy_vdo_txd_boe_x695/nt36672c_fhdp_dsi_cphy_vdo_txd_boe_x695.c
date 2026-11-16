@@ -481,10 +481,16 @@ static void lcm_get_params(struct LCM_PARAMS *params)
 	params->dsi.dfps_params[0].fps = 6000;
 	params->dsi.dfps_params[0].vact_timing_fps = 9000;
 	params->dsi.dfps_params[0].vertical_frontporch = 1321;
+	params->dsi.dfps_params[0].vertical_frontporch_for_low_power = 1321;
+	params->dsi.dfps_params[0].horizontal_frontporch_dyn = 236;
+	params->dsi.dfps_params[0].PLL_CLOCK_dyn = 544;
 	params->dsi.dfps_params[1].level = DFPS_LEVEL1;
 	params->dsi.dfps_params[1].fps = 9000;
 	params->dsi.dfps_params[1].vact_timing_fps = 9000;
 	params->dsi.dfps_params[1].vertical_frontporch = 54;
+	params->dsi.dfps_params[1].vertical_frontporch_for_low_power = 54;
+	params->dsi.dfps_params[1].horizontal_frontporch_dyn = 236;
+	params->dsi.dfps_params[1].PLL_CLOCK_dyn = 544;
 #endif
 }
 
