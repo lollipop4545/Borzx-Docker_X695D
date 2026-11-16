@@ -787,9 +787,10 @@ int dpmgr_path_get_mutex(disp_path_handle dp_handle)
 {
 	struct ddp_path_handle *phandle = NULL;
 
-	ASSERT(dp_handle);
-	if (!dp_handle)
-		return 0;
+	if (!dp_handle) {
+		DDP_PR_ERR("%s: null dp_handle\n", __func__);
+		return -EINVAL;
+	}
 
 	phandle = (struct ddp_path_handle *)dp_handle;
 	return phandle->hwmutexid;

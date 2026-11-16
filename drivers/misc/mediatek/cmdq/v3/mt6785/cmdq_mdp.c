@@ -326,6 +326,9 @@ void cmdq_mdp_dump_mmsys_config(void)
 {
 	int i = 0;
 	uint32_t value = 0;
+#ifdef CONFIG_MTK_SMI_EXT
+	bool smi_enabled = false;
+#endif
 	static const struct RegDef configRegisters[] = {
 		{0x100, "MMSYS_CG_CON0"},
 		{0x110, "MMSYS_CG_CON1"},
@@ -399,6 +402,21 @@ void cmdq_mdp_dump_mmsys_config(void)
 
 
 	};
+#ifdef CONFIG_MTK_SMI_EXT
+	if (!smi_mm_first_get()) {
+		CMDQ_ERR("skip MMSYS dump: SMI not ready\n");
+		return;
+	}
+	if (smi_bus_prepare_enable(SMI_LARB0, "CMDQ_DUMP") != 0) {
+		CMDQ_ERR("skip MMSYS dump: SMI_LARB0 power-on failed\n");
+		return;
+	}
+	smi_enabled = true;
+#endif
+	if (!MMSYS_CONFIG_BASE || !MM_MUTEX_BASE) {
+		CMDQ_ERR("skip MMSYS dump: unmapped base\n");
+		goto out_put_smi;
+	}
 	for (i = 0; i < ARRAY_SIZE(configRegisters); i++) {
 		value = CMDQ_REG_GET32(MMSYS_CONFIG_BASE +
 			configRegisters[i].offset);
@@ -408,6 +426,11 @@ void cmdq_mdp_dump_mmsys_config(void)
 	/*DISP_MUTEX MOD*/
 	value = CMDQ_REG_GET32(MM_MUTEX_BASE + 0x0D0);
 	CMDQ_ERR("%s: 0x%08x\n", "DISP_MUTEX5_MOD0", value);
+out_put_smi:
+#ifdef CONFIG_MTK_SMI_EXT
+	if (smi_enabled)
+		smi_bus_disable_unprepare(SMI_LARB0, "CMDQ_DUMP");
+#endif
 }
 int32_t cmdq_mdp_reset_with_mmsys(const uint64_t engineToResetAgain)
 {

@@ -2272,6 +2272,7 @@ int _mtkfb_internal_test(unsigned long va, unsigned int w, unsigned int h)
 struct tag_videolfb {
 	u64 fb_base;
 	u32 islcmfound;
+	u32 islcm_inited;
 	u32 fps;
 	u32 vram;
 	char lcmname[1];	/* this is the minimum size */
@@ -2366,30 +2367,37 @@ static int __parse_tag_videolfb_extra(struct device_node *node)
 
 int __parse_tag_videolfb(struct device_node *node)
 {
-	struct tag_videolfb *videolfb_tag = NULL;
-	unsigned long size = 0;
+	const struct tag_videolfb *videolfb_tag = NULL;
+	int prop_size = 0;
+	size_t hdr_size = offsetof(struct tag_videolfb, lcmname);
+	size_t max_name, name_len;
 
-	videolfb_tag = (struct tag_videolfb *)
-			of_get_property(node, "atag,videolfb", (int *)&size);
-	if (videolfb_tag) {
+	videolfb_tag = (const struct tag_videolfb *)
+			of_get_property(node, "atag,videolfb", &prop_size);
+	if (videolfb_tag && prop_size >= (int)hdr_size) {
+		max_name = (size_t)prop_size - hdr_size;
+		if (max_name > sizeof(mtkfb_lcm_name) - 1)
+			max_name = sizeof(mtkfb_lcm_name) - 1;
+		name_len = strnlen(videolfb_tag->lcmname, max_name);
+
 		memset((void *)mtkfb_lcm_name, 0, sizeof(mtkfb_lcm_name));
-		strncpy((char *)mtkfb_lcm_name, videolfb_tag->lcmname,
-			sizeof(mtkfb_lcm_name));
-		mtkfb_lcm_name[strlen(videolfb_tag->lcmname)] = '\0';
+		memcpy((void *)mtkfb_lcm_name, videolfb_tag->lcmname, name_len);
+		mtkfb_lcm_name[name_len] = '\0';
 
 		lcd_fps = videolfb_tag->fps;
 		if (lcd_fps == 0)
 			lcd_fps = 6000;
 
 		islcmconnected = videolfb_tag->islcmfound;
+		is_lcm_inited = videolfb_tag->islcm_inited;
 		vramsize = videolfb_tag->vram;
 		fb_base = videolfb_tag->fb_base;
-		is_lcm_inited = 1;
 
 		return 0;
 	}
 
-	DISPCHECK("[DT][videolfb] videolfb_tag not found\n");
+	DISPCHECK("[DT][videolfb] videolfb_tag not found or truncated (%d)\n",
+		  prop_size);
 	return -1;
 }
 
@@ -2705,19 +2713,39 @@ static int mtkfb_probe(struct platform_device *pdev)
 	disp_ion_get_mva(ion_display_client, ion_display_handle,
 			 (unsigned int *)&fb_mva, 0, DISP_M4U_PORT_DISP_OVL0);
 #else
-	disp_hal_allocate_framebuffer(fb_base, (fb_base + vramsize - 1),
+	if (!fb_base || !vramsize) {
+		DISP_PR_ERR("invalid videolfb base=%pa size=0x%x\n",
+			    &fb_base, vramsize);
+		ret = -EINVAL;
+		goto cleanup;
+	}
+	ret = disp_hal_allocate_framebuffer(fb_base, (fb_base + vramsize - 1),
 				(unsigned long *)(&fbdev->fb_va_base), &fb_mva);
+	if (ret) {
+		DISP_PR_ERR("disp_hal_allocate_framebuffer failed: %d\n", ret);
+		goto cleanup;
+	}
 #endif
 	fbdev->fb_pa_base = fb_base;
 
 	primary_display_set_frame_buffer_address((unsigned long)
 						 (fbdev->fb_va_base),
 						 fb_mva, fb_base);
-	primary_display_init(mtkfb_find_lcm_driver(), lcd_fps, is_lcm_inited);
+	ret = primary_display_init(mtkfb_find_lcm_driver(), lcd_fps, is_lcm_inited);
+	if (ret) {
+		DISP_PR_ERR("primary_display_init failed: %d\n", ret);
+		goto cleanup;
+	}
 
 	init_state++; /* 1 */
 	MTK_FB_XRES = DISP_GetScreenWidth();
 	MTK_FB_YRES = DISP_GetScreenHeight();
+	if (MTK_FB_XRES == 0 || MTK_FB_YRES == 0) {
+		DISP_PR_ERR("invalid display resolution %dx%d\n",
+			    MTK_FB_XRES, MTK_FB_YRES);
+		ret = -ENODEV;
+		goto cleanup;
+	}
 	fb_xres_update = MTK_FB_XRES;
 	fb_yres_update = MTK_FB_YRES;
 
@@ -2892,7 +2920,14 @@ int mtkfb_ipo_init(void)
 
 static void mtkfb_shutdown(struct platform_device *pdev)
 {
+	struct mtkfb_device *fbdev = pdev ? dev_get_drvdata(&pdev->dev) : NULL;
+
 	MTKFB_LOG("[FB Driver] %s\n", __func__);
+	if (!fbdev || fbdev->state != MTKFB_ACTIVE ||
+	    !primary_get_dpmgr_handle()) {
+		MTKFB_LOG("mtkfb not active; skip shutdown suspend\n");
+		return;
+	}
 	/* mt65xx_leds_brightness_set(MT65XX_LED_TYPE_LCD, LED_OFF); */
 	if (!lcd_fps)
 		msleep(30);

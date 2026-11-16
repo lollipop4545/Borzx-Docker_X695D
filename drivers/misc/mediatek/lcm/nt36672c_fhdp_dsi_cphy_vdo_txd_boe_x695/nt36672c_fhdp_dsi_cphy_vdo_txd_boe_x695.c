@@ -494,19 +494,41 @@ static void lcm_check_ret(const char *op, int ret)
 		pr_err("[LCM][ERROR] %s failed: %d\n", op, ret);
 }
 
+static int lcm_init_power_checked(void)
+{
+	int ret;
+
+	ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_LCD_BIAS_ENP1);
+	lcm_check_ret("bias_enp1", ret);
+	if (ret)
+		return ret;
+	MDELAY(5);
+	ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_LCD_BIAS_ENN1);
+	lcm_check_ret("bias_enn1", ret);
+	if (ret)
+		return ret;
+	ret = _lcm_i2c_write_bytes(0x00, 0x0F);
+	lcm_check_ret("i2c_bias_0x00", ret);
+	if (ret)
+		return ret;
+	MDELAY(1);
+	ret = _lcm_i2c_write_bytes(0x01, 0x0F);
+	lcm_check_ret("i2c_bias_0x01", ret);
+	if (ret)
+		return ret;
+	MDELAY(1);
+	ret = _lcm_i2c_write_bytes(0x03, 0x03);
+	lcm_check_ret("i2c_bias_0x03", ret);
+	if (ret)
+		return ret;
+	MDELAY(10);
+	return 0;
+}
+
 static void lcm_init_power(void)
 {
-	lcm_check_ret("bias_enp1",
-		      disp_dts_gpio_select_state(DTS_GPIO_STATE_LCD_BIAS_ENP1));
-	MDELAY(5);
-	lcm_check_ret("bias_enn1",
-		      disp_dts_gpio_select_state(DTS_GPIO_STATE_LCD_BIAS_ENN1));
-	lcm_check_ret("i2c_bias_0x00", _lcm_i2c_write_bytes(0x00, 0x0F));
-	MDELAY(1);
-	lcm_check_ret("i2c_bias_0x01", _lcm_i2c_write_bytes(0x01, 0x0F));
-	MDELAY(1);
-	lcm_check_ret("i2c_bias_0x03", _lcm_i2c_write_bytes(0x03, 0x03));
-	MDELAY(10);
+	if (lcm_init_power_checked())
+		is_power_suspend = true;
 }
 
 static void lcm_suspend_power(void)
@@ -522,8 +544,8 @@ static void lcm_suspend_power(void)
 static void lcm_resume_power(void)
 {
 	if (is_power_suspend) {
-		lcm_init_power();
-		is_power_suspend = false;
+		if (lcm_init_power_checked() == 0)
+			is_power_suspend = false;
 	}
 }
 
