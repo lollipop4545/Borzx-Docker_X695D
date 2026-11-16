@@ -1316,8 +1316,20 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 #if NVT_TOUCH_WDT_RECOVERY
    /* ESD protect by WDT */
    if (nvt_wdt_fw_recovery(point_data)) {
-       NVT_ERR("Recover for fw reset, %02X\n", point_data[1]);
-       nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME);
+       static uint8_t wdt_recovery_fail_cnt = 0;
+
+       NVT_ERR("Recover for fw reset, %02X (fail_cnt=%u)\n",
+               point_data[1], wdt_recovery_fail_cnt);
+       if (nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME) == 0) {
+           wdt_recovery_fail_cnt = 0;
+       } else {
+           wdt_recovery_fail_cnt++;
+           if (wdt_recovery_fail_cnt >= 5) {
+               NVT_ERR("wdt recovery failed %u times, quiescing touch IRQ\n",
+                       wdt_recovery_fail_cnt);
+               nvt_irq_enable(false);
+           }
+       }
        goto XFER_ERROR;
    }
 #endif /* #if NVT_TOUCH_WDT_RECOVERY */

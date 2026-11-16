@@ -802,6 +802,30 @@ function. It's complete download firmware flow.
 return:
 	Executive outcomes. 0---succeed. else---fail.
 *******************************************************/
+static void nvt_hw_eng_bootloader_reset(void)
+{
+	/*
+	 * Send eng reset cmd before download FW
+	 * Keep TP_RESX low when send eng reset cmd
+	 */
+#if NVT_TOUCH_SUPPORT_HW_RST
+	if (gpio_is_valid(ts->reset_gpio))
+		gpio_set_value(ts->reset_gpio, 0);
+	else
+		tpd_gpio_output(0, 0);
+	mdelay(1);	//wait 1ms
+#endif
+	nvt_eng_reset();
+#if NVT_TOUCH_SUPPORT_HW_RST
+	if (gpio_is_valid(ts->reset_gpio))
+		gpio_set_value(ts->reset_gpio, 1);
+	else
+		tpd_gpio_output(0, 1);
+	mdelay(10);	//wait tRT2BRST after TP_RST
+#endif
+	nvt_bootloader_reset();
+}
+
 static int32_t nvt_download_firmware_hw_crc(void)
 {
 	uint8_t retry = 0;
@@ -810,8 +834,7 @@ static int32_t nvt_download_firmware_hw_crc(void)
 	do_gettimeofday(&start);
 
 	while (1) {
-		/* bootloader reset to reset MCU */
-		nvt_bootloader_reset();
+		nvt_hw_eng_bootloader_reset();
 
 		/* Start to write firmware process */
 		ret = nvt_write_firmware(fw_entry->data, fw_entry->size);
@@ -877,26 +900,7 @@ static int32_t nvt_download_firmware(void)
 	do_gettimeofday(&start);
 
 	while (1) {
-		/*
-		 * Send eng reset cmd before download FW
-		 * Keep TP_RESX low when send eng reset cmd
-		 */
-#if NVT_TOUCH_SUPPORT_HW_RST
-		if (gpio_is_valid(ts->reset_gpio))
-			gpio_set_value(ts->reset_gpio, 0);
-		else
-			tpd_gpio_output(0, 0);
-		mdelay(1);	//wait 1ms
-#endif
-		nvt_eng_reset();
-#if NVT_TOUCH_SUPPORT_HW_RST
-		if (gpio_is_valid(ts->reset_gpio))
-			gpio_set_value(ts->reset_gpio, 1);
-		else
-			tpd_gpio_output(0, 1);
-		mdelay(10);	//wait tRT2BRST after TP_RST
-#endif
-		nvt_bootloader_reset();
+		nvt_hw_eng_bootloader_reset();
 
 		/* clear fw reset status */
 		nvt_write_addr(ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_RESET_COMPLETE, 0x00);
