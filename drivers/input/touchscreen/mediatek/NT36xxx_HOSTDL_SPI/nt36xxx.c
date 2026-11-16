@@ -1816,7 +1816,9 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 			if (ret)
 				NVT_ERR("regulator_enable vtouch failed: %d\n", ret);
 			else
-				NVT_LOG("regulator_enable vtouch ok\n");
+				NVT_ERR("regulator_enable vtouch ok (en=%d, uV=%d)\n",
+					regulator_is_enabled(tpd->reg),
+					regulator_get_voltage(tpd->reg));
 		}
 	}
 

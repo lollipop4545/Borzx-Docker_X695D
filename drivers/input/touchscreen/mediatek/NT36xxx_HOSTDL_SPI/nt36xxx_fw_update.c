@@ -834,7 +834,15 @@ static int32_t nvt_download_firmware_hw_crc(void)
 	do_gettimeofday(&start);
 
 	while (1) {
+		uint8_t dbg[4] = {0};
+
 		nvt_hw_eng_bootloader_reset();
+		nvt_set_page(ts->mmap->EVENT_BUF_ADDR);
+		dbg[0] = (ts->mmap->EVENT_BUF_ADDR + EVENT_MAP_RESET_COMPLETE) & 0x7F;
+		dbg[1] = 0xAA;
+		CTP_SPI_READ(ts->client, dbg, 2);
+		if (retry == 0)
+			NVT_ERR("post-reset rst_state=0x%02X\n", dbg[1]);
 
 		/* Start to write firmware process */
 		ret = nvt_write_firmware(fw_entry->data, fw_entry->size);
