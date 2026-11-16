@@ -874,6 +874,9 @@ static int32_t nvt_download_firmware_hw_crc(void)
 			nvt_set_page(ts->mmap->G_ILM_CHECKSUM_ADDR);
 			cdbg[0] = ts->mmap->G_ILM_CHECKSUM_ADDR & 0x7F;
 			CTP_SPI_READ(ts->client, cdbg, 5);
+			NVT_ERR("ilm(0x%06X,sz=0x%X,crc=0x%08X) dlm(0x%06X,sz=0x%X,crc=0x%08X) hw_crc=%d\n",
+				bin_map[0].SRAM_addr, bin_map[0].size, bin_map[0].crc,
+				bin_map[1].SRAM_addr, bin_map[1].size, bin_map[1].crc, ts->hw_crc);
 			NVT_ERR("pre-boot-rdy G_ILM=0x%02X%02X%02X%02X (exp 0x%08X)\n",
 				cdbg[4], cdbg[3], cdbg[2], cdbg[1], bin_map[0].crc);
 		}
