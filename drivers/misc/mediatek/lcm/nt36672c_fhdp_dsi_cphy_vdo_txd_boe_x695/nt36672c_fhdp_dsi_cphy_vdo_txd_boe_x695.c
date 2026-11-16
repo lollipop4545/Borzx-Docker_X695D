@@ -468,9 +468,9 @@ static void lcm_get_params(struct LCM_PARAMS *params)
 	params->dsi.lcm_esd_check_table[0].para_list[0] = 0x9C;
 	params->dsi.lcm_int_te_period = 683;
 
-	params->dsi.dynamic_switch_mipi = 1;
-	params->dsi.horizontal_frontporch_dyn = 236;
-	params->dsi.PLL_CLOCK_dyn = 544;
+	params->dsi.dynamic_switch_mipi = 0;
+	params->dsi.horizontal_frontporch_dyn = 230;
+	params->dsi.PLL_CLOCK_dyn = 540;
 
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 	params->dsi.dfps_enable = 1;
@@ -489,8 +489,8 @@ static void lcm_get_params(struct LCM_PARAMS *params)
 	params->dsi.dfps_params[1].vact_timing_fps = 9000;
 	params->dsi.dfps_params[1].vertical_frontporch = 54;
 	params->dsi.dfps_params[1].vertical_frontporch_for_low_power = 54;
-	params->dsi.dfps_params[1].horizontal_frontporch_dyn = 236;
-	params->dsi.dfps_params[1].PLL_CLOCK_dyn = 544;
+	params->dsi.dfps_params[1].horizontal_frontporch_dyn = 230;
+	params->dsi.dfps_params[1].PLL_CLOCK_dyn = 540;
 #endif
 }
 
