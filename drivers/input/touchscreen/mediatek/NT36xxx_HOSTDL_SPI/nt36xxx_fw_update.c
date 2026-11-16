@@ -906,17 +906,26 @@ static int32_t nvt_download_firmware_hw_crc(void)
 		/* Set Boot Ready Bit */
 		nvt_boot_ready();
 		if (retry == 0) {
-			uint8_t rdbg[4] = {0};
+			uint8_t rdbg[8] = {0};
 			int k;
 			mdelay(15);
 			NVT_ERR("immediate post-boot_ready BLD CRC:\n");
 			nvt_read_bld_hw_crc();
-			for (k = 0; k < 5; k++) {
+			for (k = 0; k < 18; k++) {
 				nvt_set_page(ts->mmap->EVENT_BUF_ADDR);
 				rdbg[0] = EVENT_MAP_RESET_COMPLETE & 0x7F;
 				rdbg[1] = 0xAA;
 				CTP_SPI_READ(ts->client, rdbg, 2);
 				NVT_ERR("t+%dms rst_state=0x%02X\n", 15 + k * 10, rdbg[1]);
+				if (rdbg[1] != 0x00) {
+					uint8_t cdbg[8] = {0};
+					nvt_set_page(0x1F600);
+					cdbg[0] = 0x00;
+					CTP_SPI_READ(ts->client, cdbg, 7);
+					NVT_ERR("t+%dms chip_id=%02X %02X %02X %02X %02X %02X\n",
+						15 + k * 10, cdbg[1], cdbg[2], cdbg[3], cdbg[4], cdbg[5], cdbg[6]);
+					break;
+				}
 				mdelay(10);
 			}
 		}
