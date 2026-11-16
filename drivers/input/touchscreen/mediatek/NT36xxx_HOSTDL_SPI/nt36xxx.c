@@ -1800,7 +1800,13 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 	NVT_LOG("mode=%d, max_speed_hz=%d\n", ts->client->mode, ts->client->max_speed_hz);
 
-	if (tpd && tpd->tpd_dev) {
+	if (!tpd || !tpd->tpd_dev) {
+		NVT_LOG("tpd_dev not ready, deferring probe\n");
+		ret = -EPROBE_DEFER;
+		goto err_spi_setup;
+	}
+
+	{
 		tpd->reg = regulator_get(tpd->tpd_dev, "vtouch");
 		if (IS_ERR_OR_NULL(tpd->reg)) {
 			NVT_ERR("regulator_get vtouch failed: %ld\n",

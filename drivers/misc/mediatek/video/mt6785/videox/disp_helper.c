@@ -445,7 +445,7 @@ void disp_helper_option_init(void)
 	disp_helper_set_option(DISP_OPT_MMPATH, 0);
 	disp_helper_set_option(DISP_OPT_TUI_MODE, 0);
 	/*DynFPS*/
-	disp_helper_set_option(DISP_OPT_DYNAMIC_FPS, 1);
+	disp_helper_set_option(DISP_OPT_DYNAMIC_FPS, 0);
 }
 
 int disp_helper_get_option_list(char *stringbuf, int buf_len)
