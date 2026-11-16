@@ -156,6 +156,7 @@ const struct mtk_chip_config spi_ctrdata = {
 #endif
 
 static uint8_t bTouchIsAwake = 0;
+bool nvt_gesture_flag;
 
 /*******************************************************
 Description:
@@ -1292,7 +1293,7 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 	int32_t finger_cnt = 0;
 
 #if WAKEUP_GESTURE
-	if (bTouchIsAwake == 0) {
+	if (bTouchIsAwake == 0 && nvt_gesture_flag) {
 		pm_wakeup_event(&ts->input_dev->dev, 5000);
 	}
 #endif
@@ -1304,29 +1305,30 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 		NVT_ERR("CTP_SPI_READ failed.(%d)\n", ret);
 		goto XFER_ERROR;
 	}
-/*
-	//--- dump SPI buf ---
-	for (i = 0; i < 10; i++) {
-		printk("%02X %02X %02X %02X %02X %02X  ",
-			point_data[1+i*6], point_data[2+i*6], point_data[3+i*6], point_data[4+i*6], point_data[5+i*6], point_data[6+i*6]);
-	}
-	printk("\n");
-*/
 
 #if NVT_TOUCH_WDT_RECOVERY
    /* ESD protect by WDT */
    if (nvt_wdt_fw_recovery(point_data)) {
-       static uint8_t wdt_recovery_fail_cnt = 0;
-
+       if (!bTouchIsAwake || !atomic_read(&ts->desired_awake)) {
+           NVT_LOG("skip wdt recovery while asleep/suspending (%02X)\n", point_data[1]);
+           if (!nvt_gesture_flag && ts->irq_enabled) {
+               ts->irq_enabled = false;
+               disable_irq_nosync(ts->client->irq);
+           }
+           goto XFER_ERROR;
+       }
        NVT_ERR("Recover for fw reset, %02X (fail_cnt=%u)\n",
-               point_data[1], wdt_recovery_fail_cnt);
-       if (nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME) == 0) {
-           wdt_recovery_fail_cnt = 0;
+               point_data[1], ts->wdt_recovery_fail_cnt);
+       if (nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME) == 0 &&
+           nvt_check_fw_reset_state(RESET_STATE_REK) == 0) {
+           ts->wdt_recovery_fail_cnt = 0;
+           ts->fw_ready = true;
        } else {
-           wdt_recovery_fail_cnt++;
-           if (wdt_recovery_fail_cnt >= 5) {
+           ts->fw_ready = false;
+           ts->wdt_recovery_fail_cnt++;
+           if (ts->wdt_recovery_fail_cnt >= 5) {
                NVT_ERR("wdt recovery failed %u times, quiescing touch IRQ (nosync)\n",
-                       wdt_recovery_fail_cnt);
+                       ts->wdt_recovery_fail_cnt);
                if (ts->irq_enabled) {
                    ts->irq_enabled = false;
                    disable_irq_nosync(ts->client->irq);
@@ -1342,6 +1344,10 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 #if NVT_TOUCH_ESD_PROTECT
 		nvt_esd_check_enable(true);
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
+		goto XFER_ERROR;
+	}
+
+	if (bTouchIsAwake == 0 && !nvt_gesture_flag) {
 		goto XFER_ERROR;
 	}
 
@@ -1539,7 +1545,7 @@ out:
 	return ret;
 }
 
-bool nvt_gesture_flag;
+// moved
 
 #if WAKEUP_GESTURE
 
@@ -2019,6 +2025,23 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	}
 #endif
 
+	ts->event_wq = alloc_workqueue("nvt-event-queue",
+						WQ_UNBOUND | WQ_HIGHPRI, 1);
+	if (!ts->event_wq) {
+		NVT_ERR("ERROR: Cannot create work thread\n");
+		ret = -ENOMEM;
+		goto err_alloc_event_wq_failed;
+	}
+
+	atomic_set(&ts->desired_awake, 1);
+	atomic_set(&ts->power_gen, 0);
+	ts->fw_ready = false;
+	ts->irq_wake_enabled = false;
+	ts->wdt_recovery_fail_cnt = 0;
+	INIT_WORK(&ts->resume_work, nvt_resume_work);
+
+	bTouchIsAwake = 1;
+
 #if defined(CONFIG_FB)
 #ifdef _MSM_DRM_NOTIFY_H_
 	ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
@@ -2045,18 +2068,6 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		goto err_register_early_suspend_failed;
 	}
 #endif
-
-	ts->event_wq = alloc_workqueue("nvt-event-queue",
-						WQ_UNBOUND | WQ_HIGHPRI, 1);
-	if (!ts->event_wq) {
-		NVT_ERR("ERROR: Cannot create work thread\n");
-		goto err_alloc_event_wq_failed;
-	}
-
-	atomic_set(&ts->desired_awake, 1);
-	INIT_WORK(&ts->resume_work, nvt_resume_work);
-
-	bTouchIsAwake = 1;
 	//tpd_init_status = 1;
 
 	NVT_LOG("end\n");
@@ -2065,21 +2076,21 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 	return 0;
 
-err_alloc_event_wq_failed:
 #if defined(CONFIG_FB)
 #ifdef _MSM_DRM_NOTIFY_H_
-	if (msm_drm_unregister_client(&ts->drm_notif))
-		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
 err_register_drm_notif_failed:
 #else
-	if (fb_unregister_client(&ts->fb_notif))
-		NVT_ERR("Error occurred while unregistering fb_notifier.\n");
 err_register_fb_notif_failed:
 #endif
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
-	unregister_early_suspend(&ts->early_suspend);
 err_register_early_suspend_failed:
 #endif
+	if (ts->event_wq) {
+		cancel_work_sync(&ts->resume_work);
+		destroy_workqueue(ts->event_wq);
+		ts->event_wq = NULL;
+	}
+err_alloc_event_wq_failed:
 #if NVT_TOUCH_MP
 nvt_mp_proc_deinit();
 err_mp_proc_init_failed:
@@ -2148,11 +2159,6 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 {
 	NVT_LOG("Removing driver...\n");
 
-	if (ts->event_wq) {
-		destroy_workqueue(ts->event_wq);
-		ts->event_wq = NULL;
-	}
-
 #if defined(CONFIG_FB)
 #ifdef _MSM_DRM_NOTIFY_H_
 	if (msm_drm_unregister_client(&ts->drm_notif))
@@ -2164,6 +2170,13 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 	unregister_early_suspend(&ts->early_suspend);
 #endif
+
+	atomic_set(&ts->desired_awake, 0);
+	if (ts->event_wq) {
+		cancel_work_sync(&ts->resume_work);
+		destroy_workqueue(ts->event_wq);
+		ts->event_wq = NULL;
+	}
 
 #if NVT_TOUCH_MP
 	nvt_mp_proc_deinit();
@@ -2224,8 +2237,6 @@ static void nvt_ts_shutdown(struct spi_device *client)
 {
 	NVT_LOG("Shutdown driver...\n");
 
-	nvt_irq_enable(false);
-
 #if defined(CONFIG_FB)
 #ifdef _MSM_DRM_NOTIFY_H_
 	if (msm_drm_unregister_client(&ts->drm_notif))
@@ -2237,6 +2248,15 @@ static void nvt_ts_shutdown(struct spi_device *client)
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 	unregister_early_suspend(&ts->early_suspend);
 #endif
+
+	atomic_set(&ts->desired_awake, 0);
+	if (ts->event_wq) {
+		cancel_work_sync(&ts->resume_work);
+		destroy_workqueue(ts->event_wq);
+		ts->event_wq = NULL;
+	}
+
+	nvt_irq_enable(false);
 
 #if NVT_TOUCH_MP
 	nvt_mp_proc_deinit();
@@ -2304,6 +2324,7 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	NVT_LOG("start\n");
 
 	bTouchIsAwake = 0;
+	ts->fw_ready = false;
 
 #if WAKEUP_GESTURE
 	//---write command to enter "wakeup gesture mode"---
@@ -2312,8 +2333,10 @@ static int32_t nvt_ts_suspend(struct device *dev)
 		buf[1] = 0x13;
 		CTP_SPI_WRITE(ts->client, buf, 2);
 
-		if (ts->client->irq > 0)
+		if (ts->client->irq > 0 && !ts->irq_wake_enabled) {
 			enable_irq_wake(ts->client->irq);
+			ts->irq_wake_enabled = true;
+		}
 
 		NVT_LOG("Enabled touch wakeup gesture\n");
 	} else {
@@ -2361,14 +2384,32 @@ return:
 *******************************************************/
 static int32_t nvt_ts_resume(struct device *dev)
 {
-	if (bTouchIsAwake) {
+	int32_t ret = 0;
+
+	if (bTouchIsAwake && ts->fw_ready) {
 		NVT_LOG("Touch is already resume\n");
 		return 0;
 	}
 
+	if (!atomic_read(&ts->desired_awake)) {
+		NVT_LOG("aborting resume: desired_awake=0\n");
+		return -ECANCELED;
+	}
+
 	mutex_lock(&ts->lock);
 
+	if (!atomic_read(&ts->desired_awake)) {
+		NVT_LOG("aborting resume under lock: desired_awake=0\n");
+		mutex_unlock(&ts->lock);
+		return -ECANCELED;
+	}
+
 	NVT_LOG("start\n");
+
+	if (ts->irq_wake_enabled && ts->client->irq > 0) {
+		disable_irq_wake(ts->client->irq);
+		ts->irq_wake_enabled = false;
+	}
 
 	// please make sure display reset(RESX) sequence and mipi dsi cmds sent before this
 #if NVT_TOUCH_SUPPORT_HW_RST
@@ -2377,15 +2418,23 @@ static int32_t nvt_ts_resume(struct device *dev)
 	else
 		tpd_gpio_output(0, 1);
 #endif
-	if (nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME)) {
-		NVT_ERR("download firmware failed, ignore check fw state\n");
-	} else {
-		nvt_check_fw_reset_state(RESET_STATE_REK);
+	ret = nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME);
+	if (ret) {
+		NVT_ERR("download firmware failed (%d), leaving fw_ready=false\n", ret);
+		ts->fw_ready = false;
+		bTouchIsAwake = 0;
+		mutex_unlock(&ts->lock);
+		return ret;
 	}
 
-#if !WAKEUP_GESTURE
-	nvt_irq_enable(true);
-#endif
+	ret = nvt_check_fw_reset_state(RESET_STATE_REK);
+	if (ret) {
+		NVT_ERR("fw reset state REK failed (%d), leaving fw_ready=false\n", ret);
+		ts->fw_ready = false;
+		bTouchIsAwake = 0;
+		mutex_unlock(&ts->lock);
+		return ret;
+	}
 
 #if NVT_TOUCH_ESD_PROTECT
 	nvt_esd_check_enable(false);
@@ -2393,9 +2442,15 @@ static int32_t nvt_ts_resume(struct device *dev)
 			msecs_to_jiffies(NVT_TOUCH_ESD_CHECK_PERIOD));
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 
+	ts->fw_ready = true;
+	ts->wdt_recovery_fail_cnt = 0;
 	bTouchIsAwake = 1;
 
 	mutex_unlock(&ts->lock);
+
+	/* Re-enable IRQ outside ts->lock if previously quiesced */
+	if (!ts->irq_enabled)
+		nvt_irq_enable(true);
 
 	NVT_LOG("end\n");
 
@@ -2406,12 +2461,24 @@ static void nvt_resume_work(struct work_struct *work)
 {
 	struct nvt_ts_data *ts =
 			container_of(work, struct nvt_ts_data, resume_work);
-	int want = atomic_read(&ts->desired_awake);
+	int loops = 0;
 
-	if (!want && bTouchIsAwake) {
-		nvt_ts_suspend(&ts->client->dev);
-	} else if (want && !bTouchIsAwake) {
-		nvt_ts_resume(&ts->client->dev);
+	while (loops++ < 4) {
+		int want = atomic_read(&ts->desired_awake);
+		int gen = atomic_read(&ts->power_gen);
+
+		if (!want && bTouchIsAwake) {
+			nvt_ts_suspend(&ts->client->dev);
+		} else if (want && !bTouchIsAwake) {
+			if (nvt_ts_resume(&ts->client->dev) != 0)
+				break;
+		} else {
+			break;
+		}
+
+		if (atomic_read(&ts->power_gen) == gen &&
+		    atomic_read(&ts->desired_awake) == (bTouchIsAwake ? 1 : 0))
+			break;
 	}
 }
 
@@ -2457,6 +2524,15 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 		if (*blank == FB_BLANK_POWERDOWN) {
 			NVT_LOG("fb_notif powerdown (async)\n");
 			atomic_set(&ts->desired_awake, 0);
+			atomic_inc(&ts->power_gen);
+			queue_work(ts->event_wq, &ts->resume_work);
+		}
+	} else if (evdata && evdata->data && event == FB_R_EARLY_EVENT_BLANK) {
+		blank = evdata->data;
+		if (*blank == FB_BLANK_POWERDOWN) {
+			NVT_LOG("fb_notif revert powerdown (async)\n");
+			atomic_set(&ts->desired_awake, 1);
+			atomic_inc(&ts->power_gen);
 			queue_work(ts->event_wq, &ts->resume_work);
 		}
 	} else if (evdata && evdata->data && event == FB_EVENT_BLANK) {
@@ -2464,6 +2540,7 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 		if (*blank == FB_BLANK_UNBLANK) {
 			NVT_LOG("fb_notif unblank (async)\n");
 			atomic_set(&ts->desired_awake, 1);
+			atomic_inc(&ts->power_gen);
 			queue_work(ts->event_wq, &ts->resume_work);
 		}
 	}

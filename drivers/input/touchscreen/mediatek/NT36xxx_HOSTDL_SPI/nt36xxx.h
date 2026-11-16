@@ -139,6 +139,10 @@ struct nvt_ts_data {
 	struct workqueue_struct *event_wq;
 	struct work_struct resume_work;
 	atomic_t desired_awake;
+	atomic_t power_gen;
+	bool fw_ready;
+	bool irq_wake_enabled;
+	uint8_t wdt_recovery_fail_cnt;
 #ifdef CONFIG_MTK_SPI
 	struct mt_chip_conf spi_ctrl;
 #endif

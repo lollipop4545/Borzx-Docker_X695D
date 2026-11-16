@@ -27,9 +27,10 @@ endif
 
 fw-shipped-$(CONFIG_TOUCHSCREEN_FTS8719) += focaltech_ts_fw_xinli.bin focaltech_ts_fw_xinli3th.bin
 
-ifeq ($(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI),y)
-fw-shipped-$(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI) += novatek_ts_fw.bin novatek_ts_mp.bin
-endif
+# Disabled for X695D: load device-specific Novatek firmware from /vendor/firmware/
+# ifeq ($(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI),y)
+# fw-shipped-$(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI) += novatek_ts_fw.bin novatek_ts_mp.bin
+# endif
 
 ifeq ($(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI_G7),y)
 fw-shipped-$(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI_G7) += novatek_ts_fw.bin novatek_ts_mp.bin

@@ -315,10 +315,19 @@ static int32_t update_firmware_request(char *filename)
 		NVT_LOG("filename is %s\n", filename);
 
 		ret = request_firmware(&fw_entry, filename, &ts->client->dev);
+		if (ret && strcmp(filename, "novatek_ts_fw.bin") == 0) {
+			NVT_ERR("request_firmware(%s) failed (%d), trying novatek_ts_fw_01.bin\n",
+				filename, ret);
+			ret = request_firmware(&fw_entry, "novatek_ts_fw_01.bin", &ts->client->dev);
+			if (!ret)
+				NVT_LOG("loaded fallback firmware novatek_ts_fw_01.bin (size=%zu)\n",
+					fw_entry->size);
+		}
 		if (ret) {
 			NVT_ERR("firmware load failed, ret=%d\n", ret);
 			goto request_fail;
 		}
+		NVT_LOG("loaded firmware size=%zu\n", fw_entry->size);
 
 		// check FW need to write size
 		if (nvt_get_fw_need_write_size(fw_entry)) {
@@ -836,6 +845,11 @@ static int32_t nvt_download_firmware_hw_crc(void)
 	while (1) {
 		uint8_t dbg[4] = {0};
 
+		if (!atomic_read(&ts->desired_awake)) {
+			NVT_LOG("aborting hw_crc fw download: desired_awake=0\n");
+			return -ECANCELED;
+		}
+
 		nvt_hw_eng_bootloader_reset();
 		nvt_set_page(ts->mmap->EVENT_BUF_ADDR);
 		dbg[0] = (ts->mmap->EVENT_BUF_ADDR + EVENT_MAP_RESET_COMPLETE) & 0x7F;
@@ -905,42 +919,7 @@ static int32_t nvt_download_firmware_hw_crc(void)
 
 		/* Set Boot Ready Bit */
 		nvt_boot_ready();
-		if (retry == 0) {
-			uint8_t rdbg[8] = {0};
-			int k;
-			mdelay(15);
-			NVT_ERR("immediate post-boot_ready BLD CRC:\n");
-			nvt_read_bld_hw_crc();
-			for (k = 0; k < 18; k++) {
-				int32_t ret_pg, ret_rd;
-				ret_pg = nvt_set_page(ts->mmap->EVENT_BUF_ADDR);
-				rdbg[0] = EVENT_MAP_RESET_COMPLETE & 0x7F;
-				rdbg[1] = 0xAA;
-				ret_rd = CTP_SPI_READ(ts->client, rdbg, 2);
-				NVT_ERR("t+%dms rst_state=0x%02X (pg=%d rd=%d)\n",
-					15 + k * 10, rdbg[1], ret_pg, ret_rd);
-				if (rdbg[1] != 0x00) {
-					uint8_t cdbg[8] = {0};
-					uint32_t orig_hz = ts->client->max_speed_hz;
-					nvt_set_page(0x1F600);
-					cdbg[0] = 0x00;
-					CTP_SPI_READ(ts->client, cdbg, 7);
-					NVT_ERR("t+%dms chip_id@8M=%02X %02X %02X %02X %02X %02X\n",
-						15 + k * 10, cdbg[1], cdbg[2], cdbg[3], cdbg[4], cdbg[5], cdbg[6]);
-					ts->client->max_speed_hz = 1000000;
-					spi_setup(ts->client);
-					nvt_set_page(0x1F600);
-					memset(cdbg, 0, sizeof(cdbg));
-					CTP_SPI_READ(ts->client, cdbg, 7);
-					NVT_ERR("t+%dms chip_id@1M=%02X %02X %02X %02X %02X %02X\n",
-						15 + k * 10, cdbg[1], cdbg[2], cdbg[3], cdbg[4], cdbg[5], cdbg[6]);
-					ts->client->max_speed_hz = orig_hz;
-					spi_setup(ts->client);
-					break;
-				}
-				mdelay(10);
-			}
-		}
+
 
 		ret = nvt_check_fw_reset_state(RESET_STATE_INIT);
 		if (ret) {
@@ -1096,8 +1075,26 @@ return:
 *******************************************************/
 void Boot_Update_Firmware(struct work_struct *work)
 {
+	int32_t ret;
+
+	if (!atomic_read(&ts->desired_awake)) {
+		NVT_LOG("skipping Boot_Update_Firmware: desired_awake=0\n");
+		return;
+	}
+
 	mutex_lock(&ts->lock);
-	nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME);
+	if (!atomic_read(&ts->desired_awake)) {
+		NVT_LOG("skipping Boot_Update_Firmware under lock: desired_awake=0\n");
+		mutex_unlock(&ts->lock);
+		return;
+	}
+	ret = nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME);
+	if (ret == 0 && nvt_check_fw_reset_state(RESET_STATE_REK) == 0) {
+		ts->fw_ready = true;
+		ts->wdt_recovery_fail_cnt = 0;
+	} else {
+		ts->fw_ready = false;
+	}
 	get_tp_info();
 	mutex_unlock(&ts->lock);
 }
