@@ -850,6 +850,15 @@ static int32_t nvt_download_firmware_hw_crc(void)
 			NVT_ERR("Write_Firmware failed. (%d)\n", ret);
 			goto fail;
 		}
+		if (retry == 0) {
+			uint8_t sdbg[8] = {0};
+			const u8 *exp = &fw_entry->data[bin_map[0].BIN_addr];
+			nvt_set_page(bin_map[0].SRAM_addr);
+			sdbg[0] = bin_map[0].SRAM_addr & 0x7F;
+			CTP_SPI_READ(ts->client, sdbg, 5);
+			NVT_ERR("post-wr sram0=%02X%02X%02X%02X (exp %02X%02X%02X%02X)\n",
+				sdbg[1], sdbg[2], sdbg[3], sdbg[4], exp[0], exp[1], exp[2], exp[3]);
+		}
 
 #if NVT_DUMP_PARTITION
 		ret = nvt_dump_partition();
