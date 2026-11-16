@@ -860,6 +860,14 @@ static int32_t nvt_download_firmware_hw_crc(void)
 
 		/* set ilm & dlm reg bank */
 		nvt_set_bld_hw_crc();
+		if (retry == 0) {
+			uint8_t cdbg[8] = {0};
+			nvt_set_page(ts->mmap->G_ILM_CHECKSUM_ADDR);
+			cdbg[0] = ts->mmap->G_ILM_CHECKSUM_ADDR & 0x7F;
+			CTP_SPI_READ(ts->client, cdbg, 5);
+			NVT_ERR("pre-boot-rdy G_ILM=0x%02X%02X%02X%02X (exp 0x%08X)\n",
+				cdbg[4], cdbg[3], cdbg[2], cdbg[1], bin_map[0].crc);
+		}
 
 		/* enable hw bld crc function */
 		nvt_bld_crc_enable();
