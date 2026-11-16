@@ -26,6 +26,7 @@
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
 #include <linux/string.h>
+#include <linux/regulator/consumer.h>
 //#include <linux/hqsysfs.h>
 
 #if defined(CONFIG_FB)
@@ -1786,6 +1787,20 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 #endif
 
 	NVT_LOG("mode=%d, max_speed_hz=%d\n", ts->client->mode, ts->client->max_speed_hz);
+
+	if (tpd && tpd->tpd_dev) {
+		tpd->reg = regulator_get(tpd->tpd_dev, "vtouch");
+		if (IS_ERR_OR_NULL(tpd->reg)) {
+			NVT_ERR("regulator_get vtouch failed: %ld\n",
+				IS_ERR(tpd->reg) ? PTR_ERR(tpd->reg) : 0L);
+		} else {
+			ret = regulator_enable(tpd->reg);
+			if (ret)
+				NVT_ERR("regulator_enable vtouch failed: %d\n", ret);
+			else
+				NVT_LOG("regulator_enable vtouch ok\n");
+		}
+	}
 
 	//---parse dts---
 	ret = nvt_parse_dt(&client->dev);
