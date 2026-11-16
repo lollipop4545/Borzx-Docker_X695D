@@ -2285,6 +2285,11 @@ static int32_t nvt_ts_suspend(struct device *dev)
 		return 0;
 	}
 
+	if (!mutex_trylock(&ts->lock)) {
+		NVT_ERR("nvt_ts_suspend: ts->lock busy, skipping to avoid FBIOBLANK hang\n");
+		return 0;
+	}
+
 #if !WAKEUP_GESTURE
 	nvt_irq_enable(false);
 #endif
@@ -2294,8 +2299,6 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	cancel_delayed_work_sync(&nvt_esd_check_work);
 	nvt_esd_check_enable(false);
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
-
-	mutex_lock(&ts->lock);
 
 	NVT_LOG("start\n");
 
