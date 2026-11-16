@@ -2445,9 +2445,11 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 	if (evdata && evdata->data && event == FB_EARLY_EVENT_BLANK) {
 		blank = evdata->data;
 		if (*blank == FB_BLANK_POWERDOWN) {
-			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
+			NVT_ERR("fb_notif powerdown+\n");
 			flush_workqueue(ts->event_wq);
+			NVT_ERR("fb_notif flushed, calling suspend\n");
 			nvt_ts_suspend(&ts->client->dev);
+			NVT_ERR("fb_notif powerdown-\n");
 		}
 	} else if (evdata && evdata->data && event == FB_EVENT_BLANK) {
 		blank = evdata->data;

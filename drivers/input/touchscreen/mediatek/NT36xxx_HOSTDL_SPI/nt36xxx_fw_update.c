@@ -858,6 +858,22 @@ static int32_t nvt_download_firmware_hw_crc(void)
 			CTP_SPI_READ(ts->client, sdbg, 5);
 			NVT_ERR("post-wr sram0=%02X%02X%02X%02X (exp %02X%02X%02X%02X)\n",
 				sdbg[1], sdbg[2], sdbg[3], sdbg[4], exp[0], exp[1], exp[2], exp[3]);
+			if (bin_map[0].size > 0x8004) {
+				const u8 *mexp = &fw_entry->data[bin_map[0].BIN_addr + 0x8000];
+				nvt_set_page(bin_map[0].SRAM_addr + 0x8000);
+				sdbg[0] = (bin_map[0].SRAM_addr + 0x8000) & 0x7F;
+				CTP_SPI_READ(ts->client, sdbg, 5);
+				NVT_ERR("post-wr mid_ilm=%02X%02X%02X%02X (exp %02X%02X%02X%02X)\n",
+					sdbg[1], sdbg[2], sdbg[3], sdbg[4], mexp[0], mexp[1], mexp[2], mexp[3]);
+			}
+			if (bin_map[1].size > 4) {
+				const u8 *dexp = &fw_entry->data[bin_map[1].BIN_addr];
+				nvt_set_page(bin_map[1].SRAM_addr);
+				sdbg[0] = bin_map[1].SRAM_addr & 0x7F;
+				CTP_SPI_READ(ts->client, sdbg, 5);
+				NVT_ERR("post-wr dlm0=%02X%02X%02X%02X (exp %02X%02X%02X%02X)\n",
+					sdbg[1], sdbg[2], sdbg[3], sdbg[4], dexp[0], dexp[1], dexp[2], dexp[3]);
+			}
 		}
 
 #if NVT_DUMP_PARTITION
@@ -889,6 +905,11 @@ static int32_t nvt_download_firmware_hw_crc(void)
 
 		/* Set Boot Ready Bit */
 		nvt_boot_ready();
+		if (retry == 0) {
+			mdelay(15);
+			NVT_ERR("immediate post-boot_ready BLD CRC:\n");
+			nvt_read_bld_hw_crc();
+		}
 
 		ret = nvt_check_fw_reset_state(RESET_STATE_INIT);
 		if (ret) {
