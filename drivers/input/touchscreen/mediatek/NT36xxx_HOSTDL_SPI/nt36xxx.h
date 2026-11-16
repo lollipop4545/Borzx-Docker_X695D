@@ -173,7 +173,7 @@ typedef enum {
 #define SPI_READ_MASK(a)	(a & 0x7F)
 
 #define DUMMY_BYTES (1)
-#define NVT_TRANSFER_LEN	(31)
+#define NVT_TRANSFER_LEN	(28)
 
 typedef enum {
 	NVTWRITE = 0,
