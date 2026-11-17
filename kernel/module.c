@@ -4503,3 +4503,25 @@ void module_layout(struct module *mod,
 }
 EXPORT_SYMBOL(module_layout);
 #endif
+
+/* Safe no-op stubs for Transsion tranlog symbols imported by vendor .ko modules */
+void *alloc_msg(unsigned int a, unsigned int b) { return NULL; }
+EXPORT_SYMBOL(alloc_msg);
+
+void free_msg(void *msg) {}
+EXPORT_SYMBOL(free_msg);
+
+int msg_put_string(void *msg, const char *k, const char *v) { return 0; }
+EXPORT_SYMBOL(msg_put_string);
+
+int msg_put_int(void *msg, const char *k, int v) { return 0; }
+EXPORT_SYMBOL(msg_put_int);
+
+int msg_put_long(void *msg, const char *k, long v) { return 0; }
+EXPORT_SYMBOL(msg_put_long);
+
+int msg_put_ll(void *msg, const char *k, long long v) { return 0; }
+EXPORT_SYMBOL(msg_put_ll);
+
+int submit_msg(void *msg) { return 0; }
+EXPORT_SYMBOL(submit_msg);
