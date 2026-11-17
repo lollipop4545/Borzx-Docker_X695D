@@ -16,6 +16,62 @@
 #include "mt6785-afe-gpio.h"
 #include "../../codecs/mt6359.h"
 #include "../common/mtk-sp-spk-amp.h"
+#include <linux/of_gpio.h>
+#include <linux/gpio.h>
+#include <linux/delay.h>
+#include <linux/spinlock.h>
+
+static int tran_extamp_gpio = -1;
+static int tran_dual_spk_gpio = -1;
+static u32 tran_extamp_mode = 2;
+static DEFINE_SPINLOCK(tran_extamp_lock);
+
+static void tran_audio_pulse_gpio(int gpio, int pulses)
+{
+	int i;
+	unsigned long flags;
+
+	if (!gpio_is_valid(gpio))
+		return;
+
+	spin_lock_irqsave(&tran_extamp_lock, flags);
+	gpio_direction_output(gpio, 0);
+	udelay(2);
+	for (i = 0; i < pulses; i++) {
+		gpio_set_value(gpio, 0);
+		udelay(2);
+		gpio_set_value(gpio, 1);
+		udelay(2);
+	}
+	spin_unlock_irqrestore(&tran_extamp_lock, flags);
+}
+
+static void tran_audio_init(struct device *dev)
+{
+	struct device_node *np;
+
+	np = of_find_compatible_node(NULL, NULL, "tran_audio,audio");
+	if (!np) {
+		dev_warn(dev, "tran_audio,audio node not found\n");
+		return;
+	}
+	tran_extamp_gpio = of_get_named_gpio(np, "extamp_gpio", 0);
+	tran_dual_spk_gpio = of_get_named_gpio(np, "dual_speaker_gpio", 0);
+	if (of_property_read_u32(np, "extamp_mode", &tran_extamp_mode))
+		tran_extamp_mode = 2;
+	of_node_put(np);
+
+	if (gpio_is_valid(tran_extamp_gpio)) {
+		if (devm_gpio_request_one(dev, tran_extamp_gpio, GPIOF_OUT_INIT_LOW, "tran_extamp"))
+			tran_extamp_gpio = -1;
+	}
+	if (gpio_is_valid(tran_dual_spk_gpio)) {
+		if (devm_gpio_request_one(dev, tran_dual_spk_gpio, GPIOF_OUT_INIT_LOW, "tran_dual_spk"))
+			tran_dual_spk_gpio = -1;
+	}
+	dev_info(dev, "tran_audio: extamp_gpio=%d dual_spk_gpio=%d mode=%u\n",
+		 tran_extamp_gpio, tran_dual_spk_gpio, tran_extamp_mode);
+}
 
 #ifdef CONFIG_SND_SOC_MT8185_EVB
 #include <linux/of_gpio.h>
@@ -159,9 +215,15 @@ static int mt6785_mt6359_spk_amp_event(struct snd_soc_dapm_widget *w,
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
 		/* spk amp on control */
+		tran_audio_pulse_gpio(tran_extamp_gpio, tran_extamp_mode);
+		tran_audio_pulse_gpio(tran_dual_spk_gpio, tran_extamp_mode);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
 		/* spk amp off control */
+		if (gpio_is_valid(tran_extamp_gpio))
+			gpio_set_value(tran_extamp_gpio, 0);
+		if (gpio_is_valid(tran_dual_spk_gpio))
+			gpio_set_value(tran_dual_spk_gpio, 0);
 		break;
 	default:
 		break;
@@ -1200,6 +1262,8 @@ static int mt6785_mt6359_dev_probe(struct platform_device *pdev)
 	int ret, i;
 	int spk_out_dai_link_idx, spk_iv_dai_link_idx;
 	const char *name;
+
+	tran_audio_init(&pdev->dev);
 
 	ret = mtk_spk_update_info(card, pdev,
 				  &spk_out_dai_link_idx, &spk_iv_dai_link_idx,
