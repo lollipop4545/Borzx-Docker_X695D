@@ -314,14 +314,16 @@ static int32_t update_firmware_request(char *filename)
 	while (1) {
 		NVT_LOG("filename is %s\n", filename);
 
-		ret = request_firmware(&fw_entry, filename, &ts->client->dev);
-		if (ret && strcmp(filename, "novatek_ts_fw.bin") == 0) {
-			NVT_ERR("request_firmware(%s) failed (%d), trying novatek_ts_fw_01.bin\n",
-				filename, ret);
+		if (strcmp(filename, "novatek_ts_fw.bin") == 0) {
 			ret = request_firmware(&fw_entry, "novatek_ts_fw_01.bin", &ts->client->dev);
-			if (!ret)
-				NVT_LOG("loaded fallback firmware novatek_ts_fw_01.bin (size=%zu)\n",
-					fw_entry->size);
+			if (!ret) {
+				NVT_ERR("loaded novatek_ts_fw_01.bin (size=%zu)\n", fw_entry->size);
+			} else {
+				NVT_ERR("novatek_ts_fw_01.bin not found (%d), using %s\n", ret, filename);
+				ret = request_firmware(&fw_entry, filename, &ts->client->dev);
+			}
+		} else {
+			ret = request_firmware(&fw_entry, filename, &ts->client->dev);
 		}
 		if (ret) {
 			NVT_ERR("firmware load failed, ret=%d\n", ret);
