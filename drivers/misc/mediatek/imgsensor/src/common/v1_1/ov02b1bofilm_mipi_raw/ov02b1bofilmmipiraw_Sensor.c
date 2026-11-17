@@ -134,7 +134,7 @@ static struct imgsensor_info_struct imgsensor_info = {
 	.mclk = 24, /* mclk value, suggest 24 or 26 for 24Mhz or 26Mhz */
 	/*.mipi_lane_num = SENSOR_MIPI_4_LANE,*/
 	.mipi_lane_num = SENSOR_MIPI_1_LANE,
-	.i2c_addr_table = {0x78, 0xff},
+	.i2c_addr_table = {0x7a, 0x78, 0xff},
 	/* record sensor support all write id addr,
 	 * only supprt 4 must end with 0xff
 	 */

@@ -194,8 +194,10 @@ struct IMGSENSOR_HW_POWER_SEQ sensor_power_sequence[] = {
 	{
 		SENSOR_DRVNAME_GC02M1B_MIPI_RAW,
 		{
+			{PDN, Vol_Low, 1},
 			{RST, Vol_Low, 1},
 			{DOVDD, Vol_1800, 1},
+			{DVDD, Vol_1200, 1},
 			{AVDD, Vol_2800, 1},
 			{SensorMCLK, Vol_High, 1},
 			{RST, Vol_High, 5}
@@ -206,8 +208,10 @@ struct IMGSENSOR_HW_POWER_SEQ sensor_power_sequence[] = {
 	{
 		"ov02b1b_mipi_raw",
 		{
+			{PDN, Vol_Low, 1},
 			{RST, Vol_Low, 1},
 			{DOVDD, Vol_1800, 1},
+			{DVDD, Vol_1200, 1},
 			{AVDD, Vol_2800, 1},
 			{SensorMCLK, Vol_High, 1},
 			{RST, Vol_High, 5}
