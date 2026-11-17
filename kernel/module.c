@@ -1380,6 +1380,8 @@ static inline int same_magic(const char *amagic, const char *bmagic,
 #endif /* CONFIG_MODVERSIONS */
 
 /* Resolve a symbol for this module.  I.e. if we find one, record usage. */
+static const struct kernel_symbol tranlog_free_msg_sym;
+
 static const struct kernel_symbol *resolve_symbol(struct module *mod,
 						  const struct load_info *info,
 						  const char *name,
@@ -1399,6 +1401,10 @@ static const struct kernel_symbol *resolve_symbol(struct module *mod,
 	mutex_lock(&module_mutex);
 	sym = find_symbol(name, &owner, &crc,
 			  !(mod->taints & (1 << TAINT_PROPRIETARY_MODULE)), true);
+	if (!sym && strcmp(name, "free_msg") == 0) {
+		sym = &tranlog_free_msg_sym;
+		goto unlock;
+	}
 	if (!sym)
 		goto unlock;
 
@@ -4508,8 +4514,11 @@ EXPORT_SYMBOL(module_layout);
 void *alloc_msg(unsigned int a, unsigned int b) { return NULL; }
 EXPORT_SYMBOL(alloc_msg);
 
-void free_msg(void *msg) {}
-EXPORT_SYMBOL(free_msg);
+static void tranlog_free_msg(void *msg) {}
+static const struct kernel_symbol tranlog_free_msg_sym = {
+	.value = (unsigned long)tranlog_free_msg,
+	.name = "free_msg",
+};
 
 int msg_put_string(void *msg, const char *k, const char *v) { return 0; }
 EXPORT_SYMBOL(msg_put_string);
