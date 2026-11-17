@@ -176,6 +176,44 @@ struct IMGSENSOR_HW_POWER_SEQ sensor_power_sequence[] = {
 		},
 	},
 #endif
+#if defined(S5KGW1OFILM_MIPI_RAW)
+	{
+		"s5kgw1sd_mipi_raw",
+		{
+			{RST, Vol_Low, 0},
+			{SensorMCLK, Vol_High, 0},
+			{DOVDD, Vol_1800, 0},
+			{AVDD, Vol_2800, 0},
+			{DVDD, Vol_1200, 2},
+			{PDN, Vol_High, 1},
+			{RST, Vol_High, 5}
+		},
+	},
+#endif
+#if defined(GC02M1B_MIPI_RAW)
+	{
+		SENSOR_DRVNAME_GC02M1B_MIPI_RAW,
+		{
+			{RST, Vol_Low, 1},
+			{DOVDD, Vol_1800, 1},
+			{AVDD, Vol_2800, 1},
+			{SensorMCLK, Vol_High, 1},
+			{RST, Vol_High, 5}
+		},
+	},
+#endif
+#if defined(OV02B1BOFILM_MIPI_RAW)
+	{
+		"ov02b1b_mipi_raw",
+		{
+			{RST, Vol_Low, 1},
+			{DOVDD, Vol_1800, 1},
+			{AVDD, Vol_2800, 1},
+			{SensorMCLK, Vol_High, 1},
+			{RST, Vol_High, 5}
+		},
+	},
+#endif
 #if defined(S5K3T2_MIPI_RAW)
 	{
 		SENSOR_DRVNAME_S5K3T2_MIPI_RAW,
